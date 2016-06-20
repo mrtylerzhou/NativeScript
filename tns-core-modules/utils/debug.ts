@@ -50,32 +50,29 @@ export class Source {
 export class ScopeError extends Error {
 	private _child: Error;
 	private _message: string;
-	
-    constructor(child: Error, message?: string) {
-        super(message);
+
+	constructor(child: Error, message?: string) {
+		let msg = ScopeError.createMessage(child, message);
+		super(msg);
+		this._child = child;
+		this._message = msg;
+	}
+
+	get child() { return this._child; }
+	get message() { return this._message; }
+	get name() { return this.child.name; }
+	get stack() { return (<any>this.child).stack; }
+
+	private static createMessage(child: Error, message?: string): string {
 		if (!child) {
 			throw new Error("Required child error!");
 		}
-		this._child = child;
-		this._message = message;
-	}
-	
-	get child() { return this._child; }
-	get message() {
-		if (this._message && this._childMessage) {
-			// It is a ↳ but the ios fails to show this symbol at the moment.
-			return this._message + "\n \u21B3" + this._childMessage.replace("\n", "\n  ");	
+		let childMessage = child.message;
+		if (message && childMessage) {
+			return message + "\n ↳" + childMessage.replace(/\n/gm, "\n  ");
 		}
-		return this._message || this._childMessage || undefined;
+		return message || childMessage || undefined;
 	}
-	get name() { return this.child.name; }
-	get stack() { return (<any>this.child).stack; }
-	
-	private get _childMessage(): string {
-		return this.child.message;
-	}
-	
-	public toString() { return "Error: " + this.message; }
 }
 
 export class SourceError extends ScopeError {
