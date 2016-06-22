@@ -289,6 +289,10 @@ declare module "ui/core/view" {
          */
         isLayoutValid: boolean;
 
+        /**
+         * Gets the CSS fully qualified type name.
+         * Using this as element type should allow for PascalCase and kebap-case selectors, when fully qualified, to match the element.
+         */
         cssType: string;
 
         visualState: string;

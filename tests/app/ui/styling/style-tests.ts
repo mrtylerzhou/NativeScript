@@ -358,10 +358,8 @@ export var test_composite_selector_type_and_class = function () {
     let testFunc = function (views: Array<viewModule.View>) {
         TKUnit.assert(btnWithClass.style.color, "Color property no applied correctly.");
         TKUnit.assert(btnWithClass.style.color.hex === "#FF0000", "Color property no applied correctly.");
-
-        TKUnit.assert(btnWithNoClass.style.color === undefined, "Color should not have a value");
-
-        TKUnit.assert(lblWithClass.style.color === undefined, "Color should not have a value");
+        TKUnit.assert(btnWithNoClass.style.color === undefined, "btnWithNoClass color should not have a value");
+        TKUnit.assert(lblWithClass.style.color === undefined, "lblWithClass color should not have a value");
     }
 
     helper.buildUIAndRunTest(testStack, testFunc, testCss);

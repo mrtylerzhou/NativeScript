@@ -30,6 +30,8 @@
 
         apply(view: view.View, valueSourceModifier: number);
 
+        matchTailAndApply(view: view.View, valueSourceModifier: number): void;
+
         eachSetter(callback: (property: styleProperty.Property, resolvedValue: any) => void);
 
         visit(visitor: CssSelectorVisitor): void;
@@ -37,7 +39,7 @@
 
     class CssTypeSelector extends CssSelector {
         /**
-         * Qualified type name, lowercased with dashes removed.
+         * Qualified type name, lower-kebap-cased.
          */
         type: string;
 
@@ -45,17 +47,37 @@
 
         matchHead(view: view.View): boolean;
         matchTail(view: view.View): boolean;
+
+        /**
+         * Convers a type name to qualified CSS type name.
+         * This should allow for PascalCase and kebap-case selectors to match the same elements.
+         */
+        static qualifiedTypeName(typeName: string): string;
     }
 
     class CssIdSelector extends CssSelector {
+        /**
+         * Gets the id this selector matches.
+         */
+        id: string;
         matches(view: view.View): boolean;
     }
 
     class CssClassSelector extends CssSelector {
         matches(view: view.View): boolean;
+        /**
+         * Gets the class this selector matches.
+         */
+        cssClass: string;
     }
 
     class CssCompositeSelector extends CssSelector {
+        /**
+         * Gets the last CssSelector from the composite chain.
+         * This will be suitable for pre-screening and must be one of the last CssSelectors in the chain,
+         * that must match exactly the view they are applied on.
+         */
+        head: CssSelector;
     }
 
     class CssAttrSelector extends CssSelector {

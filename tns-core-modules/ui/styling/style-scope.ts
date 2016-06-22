@@ -200,67 +200,61 @@ export class StyleScope {
         this.cssClassMap = {};
         this.cssTypeMap = {};
         this.cssVisualStateSelectors = [];
-        this.cssComplexSelectors = [];
+        this.cssGeneralSelectors = [];
         let position = 0;
+        let addToDictionary = (map: IDictionary<{ selector: CssSelector, position: number }[]>, key: string, selector: CssSelector) => {
+            let list = map[key];
+            let pair = { selector, position };
+            if (list) {
+                list.push(pair);
+            } else {
+                map[key] = [pair];
+            }
+            position++;
+        }
+
         let visitor: CssSelectorVisitor = {
-            visitId: (selector: CssIdSelector) => {
-                let list = this.cssIdMap[selector.expression];
-                if (list) {
-                    list.push({ selector, position });
-                } else {
-                    this.cssIdMap[selector.expression] = [{ selector, position }];
-                }
-                position++;
-            },
-            visitClass: (selector: CssClassSelector) => {
-                let list = this.cssClassMap[selector.expression];
-                if (list) {
-                    list.push({ selector, position });
-                } else {
-                    this.cssClassMap[selector.expression] = [{ selector, position }];
-                }
-                position++;
-            },
-            visitType: (selector: CssTypeSelector) => {
-                let type = selector.type;
-                let list = this.cssTypeMap[type];
-                if (list) {
-                    list.push({ selector, position });
-                } else {
-                    this.cssTypeMap[type] = [{ selector, position }];
-                }
-                position++;
-            },
-            visitComposite: (selector: CssCompositeSelector) => {
-                this.cssComplexSelectors.push({ selector, position });
-                position++;
-            },
+            visitId: selector => addToDictionary(this.cssIdMap, selector.id, selector),
+            visitClass: selector => addToDictionary(this.cssClassMap, selector.cssClass, selector),
+            visitType: selector => addToDictionary(this.cssTypeMap, selector.type, selector),
+            visitComposite: selector => selector.head.visit({
+                visitId: head => addToDictionary(this.cssIdMap, head.id, selector),
+                visitClass: head => addToDictionary(this.cssClassMap, head.cssClass, selector),
+                visitType: head => addToDictionary(this.cssTypeMap, head.type, selector),
+                visitComposite: head => { throw new Error("Unexpected nested CompositeCssSelector."); },
+                visitAttr: head => {
+                    // Taking slow path through general selectors
+                    this.cssGeneralSelectors.push({ selector, position });
+                    position++;
+                },
+                visitVisualState: head => { throw new Error("Unexpected nested CssVisualStateSelector."); },
+                visitInlineStyle: head => { throw new Error("Unexpected InlineStyleSelector"); }
+            }),
             // Attr selectors have the specificity of a class selectors and pseudo selectors, they do not belong to complex selectors.
             visitAttr: (selector: CssAttrSelector) => {
-                this.cssComplexSelectors.push({ selector, position });
+                this.cssGeneralSelectors.push({ selector, position });
                 position++;
             },
             visitVisualState: (selector: CssVisualStateSelector) => {
                 this.cssVisualStateSelectors.push({ selector, position });
                 position++;
             },
-            visitInlineStyle: (selector: InlineStyleSelector) => {
-                // Throw, we are not expected to reach this.
-                this.cssComplexSelectors.push({ selector, position });
-                position++;
-            }
+            visitInlineStyle: (selector: InlineStyleSelector) => { throw new Error("Unexpected InlineStyleSelector"); }
         };
         this._mergedCssSelectors.forEach(s => s.visit(visitor));
 
         return true;
     }
 
-    private cssIdMap: IDictionary<{ selector: CssIdSelector, position: number }[]>;
-    private cssClassMap: IDictionary<{ selector: CssClassSelector, position: number }[]>;
-    private cssTypeMap: IDictionary<{ selector: CssTypeSelector, position: number }[]>;
-
+    private cssIdMap: IDictionary<{ selector: CssSelector, position: number }[]>;
+    private cssClassMap: IDictionary<{ selector: CssSelector, position: number }[]>;
+    private cssTypeMap: IDictionary<{ selector: CssSelector, position: number }[]>;
+    /**
+     * Wildcard ( * { somehting }), attribute selectors etc.
+     * Getting something here is performance critical.
+     */
+    private cssGeneralSelectors: { selector: CssSelector, position: number }[];
     private cssVisualStateSelectors: { selector: CssVisualStateSelector, position: number }[];
-    private cssComplexSelectors: { selector: CssSelector, position: number }[];
 
     private static _joinCssSelectorsArrays(arrays: Array<Array<cssSelector.CssSelector>>): Array<cssSelector.CssSelector> {
         let mergedResult = [];
@@ -284,14 +278,14 @@ export class StyleScope {
         let sel: { selector: CssSelector, position: number }[] = [];
         let push = pushed => Array.prototype.push.apply(sel, pushed);
 
-        push(this.cssComplexSelectors); // Complex
+        push(this.cssGeneralSelectors); // Slow paths that apply for each element such as * {}
         push(this.cssTypeMap[view.cssType]); // Type
         view._cssClasses.forEach(c => push(this.cssClassMap[c])); // Class
         push(this.cssIdMap[view.id]); // Id
 
         sel.filter(s => s.selector.matches(view))
             .sort((a, b) => a.selector.specificity - b.selector.specificity || a.position - b.position)
-            .forEach(s => s.selector.apply(view, observable.ValueSource.Css));
+            .forEach(s => s.selector.matchTailAndApply(view, observable.ValueSource.Css));
 
         let matchedStateSelectors = this.cssVisualStateSelectors.filter(s => s.selector.matches(view));
         if (matchedStateSelectors.length > 0) {

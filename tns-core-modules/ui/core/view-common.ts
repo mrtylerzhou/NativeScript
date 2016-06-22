@@ -156,6 +156,7 @@ export class View extends ProxyObject implements definition.View {
     private _requestedVisualState: string;
     private _isLoaded: boolean;
     private _isLayoutValid: boolean = false;
+    private _cssType: string;
 
     private _updatingInheritedProperties: boolean;
     private _registeredAnimations: Array<keyframeAnimationModule.KeyframeAnimation>;
@@ -515,7 +516,10 @@ export class View extends ProxyObject implements definition.View {
     }
 
     get cssType(): string {
-        return this.typeName.toLowerCase();
+        if (!this._cssType) {
+            this._cssType = this.typeName.replace(/-/, '').toLowerCase();
+        }
+        return this._cssType;
     }
 
     get parent(): definition.View {
