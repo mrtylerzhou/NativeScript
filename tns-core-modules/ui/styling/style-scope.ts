@@ -10,6 +10,21 @@ import * as visualStateModule from "./visual-state";
 import keyframeAnimation = require("ui/animation/keyframe-animation");
 import cssAnimationParser = require("./css-animation-parser");
 import observable = require("ui/core/dependency-observable");
+import {
+    CssIdSelector,
+    CssSelector,
+    CssClassSelector,
+    CssTypeSelector,
+    CssCompositeSelector, 
+    CssAttrSelector,
+    CssVisualStateSelector,
+    InlineStyleSelector,
+    CssSelectorVisitor
+} from "ui/styling/css-selector";
+
+interface IDictionary<T> {
+    [key:string]: T;
+}
 
 var types: typeof typesModule;
 function ensureTypes() {
@@ -125,7 +140,7 @@ export class StyleScope {
         ensureTypes();
 
         if (!types.isNullOrUndefined(tree)) {
-            let imports = tree["stylesheet"]["rules"].filter(r=> r.type === "import");
+            let imports = tree["stylesheet"]["rules"].filter(r => r.type === "import");
 
             for (let i = 0; i < imports.length; i++) {
                 let importItem = imports[i]["import"];
@@ -163,8 +178,8 @@ export class StyleScope {
         let toMerge = []
         if ((this._applicationCssSelectorsAppliedVersion !== application.cssSelectorVersion) ||
             (this._localCssSelectorVersion !== this._localCssSelectorsAppliedVersion) ||
-
             (!this._mergedCssSelectors)) {
+
             toMerge.push(application.cssSelectors);
             this._applicationCssSelectorsAppliedVersion = application.cssSelectorVersion;
             toMerge.push(this._localCssSelectors);
@@ -177,11 +192,75 @@ export class StyleScope {
         if (toMerge.length > 0) {
             this._mergedCssSelectors = StyleScope._joinCssSelectorsArrays(toMerge);
             this._applyKeyframesOnSelectors();
-            return true;
         } else {
             return false;
         }
+
+        this.cssIdMap = {};
+        this.cssClassMap = {};
+        this.cssTypeMap = {};
+        this.cssVisualStateSelectors = [];
+        this.cssComplexSelectors = [];
+        let position = 0;
+        let visitor: CssSelectorVisitor = {
+            visitId: (selector: CssIdSelector) => {
+                let list = this.cssIdMap[selector.expression];
+                if (list) {
+                    list.push({ selector, position });
+                } else {
+                    this.cssIdMap[selector.expression] = [{ selector, position }];
+                }
+                position++;
+            },
+            visitClass: (selector: CssClassSelector) => {
+                let list = this.cssClassMap[selector.expression];
+                if (list) {
+                    list.push({ selector, position });
+                } else {
+                    this.cssClassMap[selector.expression] = [{ selector, position }];
+                }
+                position++;
+            },
+            visitType: (selector: CssTypeSelector) => {
+                let type = selector.type;
+                let list = this.cssTypeMap[type];
+                if (list) {
+                    list.push({ selector, position });
+                } else {
+                    this.cssTypeMap[type] = [{ selector, position }];
+                }
+                position++;
+            },
+            visitComposite: (selector: CssCompositeSelector) => {
+                this.cssComplexSelectors.push({ selector, position });
+                position++;
+            },
+            // Attr selectors have the specificity of a class selectors and pseudo selectors, they do not belong to complex selectors.
+            visitAttr: (selector: CssAttrSelector) => {
+                this.cssComplexSelectors.push({ selector, position });
+                position++;
+            },
+            visitVisualState: (selector: CssVisualStateSelector) => {
+                this.cssVisualStateSelectors.push({ selector, position });
+                position++;
+            },
+            visitInlineStyle: (selector: InlineStyleSelector) => {
+                // Throw, we are not expected to reach this.
+                this.cssComplexSelectors.push({ selector, position });
+                position++;
+            }
+        };
+        this._mergedCssSelectors.forEach(s => s.visit(visitor));
+
+        return true;
     }
+
+    private cssIdMap: IDictionary<{ selector: CssIdSelector, position: number }[]>;
+    private cssClassMap: IDictionary<{ selector: CssClassSelector, position: number }[]>;
+    private cssTypeMap: IDictionary<{ selector: CssTypeSelector, position: number }[]>;
+
+    private cssVisualStateSelectors: { selector: CssVisualStateSelector, position: number }[];
+    private cssComplexSelectors: { selector: CssSelector, position: number }[];
 
     private static _joinCssSelectorsArrays(arrays: Array<Array<cssSelector.CssSelector>>): Array<cssSelector.CssSelector> {
         let mergedResult = [];
@@ -201,33 +280,32 @@ export class StyleScope {
         this.ensureSelectors();
 
         view.style._beginUpdate();
-        let i;
-        let selector: cssSelector.CssSelector;
-        let matchedStateSelectors = new Array<cssSelector.CssVisualStateSelector>();
 
-        // Go trough all selectors - and directly apply all non-state selectors
-        for (i = 0; i < this._mergedCssSelectors.length; i++) {
-            selector = this._mergedCssSelectors[i];
-            if (selector.matches(view)) {
-                if (selector instanceof cssSelector.CssVisualStateSelector) {
-                    matchedStateSelectors.push(<cssSelector.CssVisualStateSelector>selector);
-                } else {
-                    selector.apply(view, observable.ValueSource.Css);
-                }
-            }
-        }
+        let sel: { selector: CssSelector, position: number }[] = [];
+        let push = pushed => Array.prototype.push.apply(sel, pushed);
 
+        push(this.cssComplexSelectors); // Complex
+        push(this.cssTypeMap[view.cssType]); // Type
+        view._cssClasses.forEach(c => push(this.cssClassMap[c])); // Class
+        push(this.cssIdMap[view.id]); // Id
+
+        sel.filter(s => s.selector.matches(view))
+            .sort((a, b) => a.selector.specificity - b.selector.specificity || a.position - b.position)
+            .forEach(s => s.selector.apply(view, observable.ValueSource.Css));
+
+        let matchedStateSelectors = this.cssVisualStateSelectors.filter(s => s.selector.matches(view));
         if (matchedStateSelectors.length > 0) {
+
             // Create a key for all matched selectors for this element
             let key: string = "";
-            matchedStateSelectors.forEach((s) => key += s.key + "|");
+            matchedStateSelectors.forEach((s) => key += s.selector.key + "|");
 
             // Associate the view to the created key
             this._viewIdToKey[view._domId] = key;
 
             // Create visual states for this key if there aren't already created
             if (!this._statesByKey[key]) {
-                this._createVisualsStatesForSelectors(key, matchedStateSelectors);
+                this._createVisualsStatesForSelectors(key, matchedStateSelectors.map(s => s.selector));
             }
         }
 

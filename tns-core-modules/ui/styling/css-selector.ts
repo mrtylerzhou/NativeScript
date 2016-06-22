@@ -8,13 +8,14 @@ import * as utils from "utils/utils";
 import keyframeAnimation = require("ui/animation/keyframe-animation");
 import cssAnimationParser = require("./css-animation-parser");
 import {getSpecialPropertySetter} from "ui/builder/special-properties";
+import {CssSelectorVisitor} from "ui/styling/css-selector";
 
 let ID_SPECIFICITY = 1000000;
 let ATTR_SPECIFITY = 10000;
 let CLASS_SPECIFICITY = 100;
 let TYPE_SPECIFICITY = 1;
 
-export class CssSelector {
+export abstract class CssSelector {
     public animations: Array<keyframeAnimation.KeyframeAnimationInfo>;
 
     private _expression: string;
@@ -126,9 +127,16 @@ export class CssSelector {
             return "";
         }
     }
+
+    public abstract visit(visitor: CssSelectorVisitor): void;
 }
 
 class CssTypeSelector extends CssSelector {
+    private _type: string;
+    constructor(expression: string, declarations: cssParser.Declaration[]) {
+        super(expression, declarations);
+        this._type = CssTypeSelector.qualifiedTypeName(this.expression.split(".")[0]);
+    }
     get specificity(): number {
         let result = TYPE_SPECIFICITY;
         let dotIndex = this.expression.indexOf(DOT);
@@ -136,6 +144,9 @@ class CssTypeSelector extends CssSelector {
             result += CLASS_SPECIFICITY;
         }
         return result;
+    }
+    get type(): string {
+        return this._type;
     }
     public matches(view: view.View): boolean {
         let result = matchesType(this.expression, view);
@@ -146,6 +157,13 @@ class CssTypeSelector extends CssSelector {
     }
     public toString(): string {
         return `CssTypeSelector ${this.expression}${this.attrExpressionText} { ${this.declarationText} }`;
+    }
+
+    public visit(visitor: CssSelectorVisitor): void {
+        visitor.visitType(<any>this);
+    }
+    static qualifiedTypeName(selector: string): string {
+        return selector.toLowerCase().replace(/\-/g, "");
     }
 }
 
@@ -185,6 +203,10 @@ class CssIdSelector extends CssSelector {
     public toString(): string {
         return `CssIdSelector ${this.expression}${this.attrExpressionText} { ${this.declarationText} }`;
     }
+
+    public visit(visitor: CssSelectorVisitor): void {
+        visitor.visitId(<any>this);
+    }
 }
 
 class CssClassSelector extends CssSelector {
@@ -203,6 +225,9 @@ class CssClassSelector extends CssSelector {
         return `CssClassSelector ${this.expression}${this.attrExpressionText} { ${this.declarationText} }`;
     }
 
+    public visit(visitor: CssSelectorVisitor): void {
+        visitor.visitClass(<any>this);
+    }
 }
 
 class CssCompositeSelector extends CssSelector {
@@ -212,6 +237,10 @@ class CssCompositeSelector extends CssSelector {
             result += this.parentCssSelectors[i].selector.specificity;
         }
         return result;
+    }
+
+    get head(): CssSelector {
+        return this.parentCssSelectors[0].selector;
     }
 
     private parentCssSelectors: [{ selector: CssSelector, onlyDirectParent: boolean }];
@@ -261,7 +290,7 @@ class CssCompositeSelector extends CssSelector {
     }
 
     public matches(view: view.View): boolean {
-        let result = this.parentCssSelectors[0].selector.matches(view);
+        let result = this.head.matches(view);
         if (!result) {
             return result;
         }
@@ -289,6 +318,10 @@ class CssCompositeSelector extends CssSelector {
     public toString(): string {
         return `CssCompositeSelector ${this.expression}${this.attrExpressionText} { ${this.declarationText} }`;
     }
+
+    public visit(visitor: CssSelectorVisitor): void {
+        visitor.visitComposite(<any>this);
+    }
 }
 
 class CssAttrSelector extends CssSelector {
@@ -302,6 +335,10 @@ class CssAttrSelector extends CssSelector {
 
     public toString(): string {
         return `CssAttrSelector ${this.expression}${this.attrExpressionText} { ${this.declarationText} }`;
+    }
+
+    public visit(visitor: CssSelectorVisitor): void {
+        visitor.visitAttr(<any>this);
     }
 }
 
@@ -423,6 +460,10 @@ export class CssVisualStateSelector extends CssSelector {
     public toString(): string {
         return `CssVisualStateSelector ${this.expression}${this.attrExpressionText} { ${this.declarationText} }`;
     }
+
+    public visit(visitor: CssSelectorVisitor): void {
+        visitor.visitVisualState(<any>this);
+    }
 }
 
 let HASH = "#";
@@ -477,6 +518,10 @@ class InlineStyleSelector extends CssSelector {
 
     public toString(): string {
         return `InlineStyleSelector ${this.expression}${this.attrExpressionText} { ${this.declarationText} }`;
+    }
+
+    public visit(visitor: CssSelectorVisitor): void {
+        visitor.visitInlineStyle(<any>this);
     }
 }
 
