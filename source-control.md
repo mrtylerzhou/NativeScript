@@ -2,7 +2,7 @@
 
 As a reference point, you might find it useful to check the following [Git tutorial](http://rogerdudler.github.io/git-guide/) and the [Git cheatsheet] (http://www.git-tower.com/files/cheatsheet/Git_Cheat_Sheet_grey.pdf).
 
-***
+*****
 ### (!) Important - Before you start
 1.<a id="global-rebase"></a>`git config --global branch.autosetuprebase always` will make `git pull` to use `--rebase`. (shall works with TortoiseGit as well.)
 
